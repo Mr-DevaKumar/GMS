@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Delete, Loader2, ArrowRight, Lock } from 'lucide-react';
+import { Delete, Loader2, ArrowRight, Lock, Eye, EyeOff } from 'lucide-react';
 
 const PIN_MAX = 10;
 
@@ -140,6 +140,7 @@ function KeyButton({
 
 export default function Login() {
   const [pin, setPin] = useState('');
+  const [showPin, setShowPin] = useState(true); // PIN visible by default
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
@@ -152,7 +153,7 @@ export default function Login() {
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsInitializing(false);
-    }, 1500); // 1.5 seconds for the loader to complete
+    }, 1500); 
     return () => clearTimeout(timer);
   }, []);
 
@@ -219,32 +220,12 @@ export default function Login() {
     return () => window.removeEventListener('keydown', onKey);
   }, [addDigit, backspace, submitPin]);
 
-  const dots = (pinCount: number) => (
-    <div className="flex items-center justify-center gap-1.5 sm:gap-2">
-      {Array.from({ length: PIN_MAX }).map((_, i) => {
-        const filled = i < pinCount;
-        return (
-          <span
-            key={i}
-            className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
-              filled
-                ? 'bg-[var(--ink)] border-[var(--ink)] scale-110'
-                : 'border-[var(--line)] scale-100'
-            }`}
-          />
-        );
-      })}
-    </div>
-  );
-
   /* ---------- INITIAL LOADER SCREEN ---------- */
   if (isInitializing) {
     return (
       <>
         <style>{STYLES}</style>
         <div className="fixed inset-0 bg-[var(--bg)] flex flex-col items-center justify-center z-50 overflow-hidden">
-          
-          {/* Subtle Background Texture */}
           <div
             className="absolute inset-0 pointer-events-none opacity-40"
             style={{
@@ -252,14 +233,10 @@ export default function Login() {
               backgroundSize: '24px 24px',
             }}
           />
-
-          {/* Central Animated Glyph */}
           <div className="relative z-10 flex flex-col items-center">
             <div className="flex items-center justify-center w-32 h-32 mb-10 bg-[var(--surface)] rounded-full shadow-[0_8px_32px_rgba(0,0,0,0.06)] border border-[var(--line)]">
               <GlyphMark size={12} gap={8} animated />
             </div>
-
-            {/* Text & Progress Bar */}
             <div className="flex flex-col items-center gap-5 w-64">
               <span 
                 className="text-xs font-bold tracking-[0.4em] font-mono text-[var(--ink)] uppercase ml-2"
@@ -267,13 +244,10 @@ export default function Login() {
               >
                 Initializing
               </span>
-              
               <div className="w-full h-1.5 bg-[var(--surface-2)] rounded-full overflow-hidden shadow-inner">
                 <div 
                   className="h-full bg-[var(--ink)] rounded-full"
-                  style={{ 
-                    animation: 'load-progress 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards'
-                  }} 
+                  style={{ animation: 'load-progress 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards' }} 
                 />
               </div>
             </div>
@@ -341,6 +315,7 @@ export default function Login() {
               shake ? 'animate-shake' : ''
             }`}
           >
+            {/* New Interactive Input Field */}
             <div className="w-full mb-6">
               <div className="flex items-center justify-between mb-3 px-1">
                 <span className="label">Enter PIN</span>
@@ -348,7 +323,34 @@ export default function Login() {
                   {pin.length}/{PIN_MAX}
                 </span>
               </div>
-              {dots(pin.length)}
+              
+              <div className="relative">
+                <input
+                  type={showPin ? "text" : "password"}
+                  inputMode="numeric"
+                  value={pin}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '').slice(0, PIN_MAX);
+                    setPin(val);
+                  }}
+                  placeholder="Enter your PIN"
+                  maxLength={PIN_MAX}
+                  disabled={loading}
+                  className="
+                    w-full h-16 bg-[var(--surface)] border border-[var(--line)] rounded-2xl 
+                    px-4 pr-12 text-center font-mono text-2xl tracking-[0.2em] text-[var(--ink)] 
+                    shadow-sm focus:outline-none focus:border-[var(--ink)] transition-colors 
+                    placeholder:text-sm placeholder:font-sans placeholder:tracking-normal
+                  "
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPin(!showPin)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-[var(--ink-3)] hover:text-[var(--ink)] transition-colors"
+                >
+                  {showPin ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
 
             <div className="h-7 w-full flex items-center justify-center mb-2">
@@ -458,7 +460,35 @@ export default function Login() {
           </div>
 
           <div className={`relative flex flex-col items-center gap-3 w-full ${shake ? 'animate-shake' : ''}`}>
-            {dots(pin.length)}
+            {/* Mobile Interactive Input Field */}
+            <div className="relative w-full max-w-[300px]">
+              <input
+                type={showPin ? "text" : "password"}
+                inputMode="numeric"
+                value={pin}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, '').slice(0, PIN_MAX);
+                  setPin(val);
+                }}
+                placeholder="Enter your PIN"
+                maxLength={PIN_MAX}
+                disabled={loading}
+                className="
+                  w-full h-14 bg-[var(--surface)] border border-[var(--line)] rounded-2xl 
+                  px-4 pr-12 text-center font-mono text-xl tracking-[0.2em] text-[var(--ink)] 
+                  shadow-sm focus:outline-none focus:border-[var(--ink)] transition-colors 
+                  placeholder:text-sm placeholder:font-sans placeholder:tracking-normal
+                "
+              />
+              <button
+                type="button"
+                onClick={() => setShowPin(!showPin)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-[var(--ink-3)] hover:text-[var(--ink)] transition-colors"
+              >
+                {showPin ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+
             <div className="h-6 flex items-center justify-center">
               {error ? (
                 <span
@@ -474,7 +504,7 @@ export default function Login() {
                   className="text-[10px] uppercase tracking-[0.2em] text-[var(--ink-3)]"
                   style={{ fontFamily: 'var(--font-mono)' }}
                 >
-                  {pin.length === 0 ? 'Enter your PIN' : `${pin.length} / ${PIN_MAX}`}
+                  {pin.length === 0 ? '' : `${pin.length} / ${PIN_MAX}`}
                 </span>
               )}
             </div>
