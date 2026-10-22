@@ -50,7 +50,9 @@ export default function Coordinators() {
   }, []);
 
   async function create() {
-    if (!name.trim() || !pin) return show('Name and PIN required', true);
+    if (!name.trim() || pin.length < 6 || pin.length > 10) {
+      return show('Name and 6-10 digit PIN required', true);
+    }
     const { data: session } = await supabase.auth.getSession();
     const token = session.session?.access_token;
     if (!token) return show('Not authenticated', true);
