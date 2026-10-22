@@ -1,58 +1,49 @@
 import { createClient } from '@supabase/supabase-js';
 
-const admin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const { pin } = req.body || {};
   if (!pin) return res.status(400).json({ error: 'PIN required' });
 
+  // 1. Verify Environment Variables exist
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return res.status(500).json({ error: 'Server config error: Missing Supabase credentials in Vercel.' });
+  }
+
+  const admin = createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+
   try {
-    // --- FAST PATH ---
-    // 1. Try to find the coordinator using the pin_lookup column
-    const { data: profile } = await admin
+    // 2. Fetch all coordinators (and explicitly count them)
+    const { data: allCoordinators, error: fetchError, count } = await admin
       .from('profiles')
-      .select('id, email')
-      .eq('pin_lookup', String(pin))
-      .maybeSingle();
-
-    if (profile && profile.email) {
-      const { data, error } = await admin.auth.signInWithPassword({
-        email: profile.email,
-        password: String(pin),
-      });
-      if (!error && data.session) {
-        return res.json({ session: data.session });
-      }
-    }
-
-    // --- FALLBACK PATH (For old coordinators) ---
-    // 2. If not found, fetch all coordinators and try to match the PIN
-    const { data: allCoordinators } = await admin
-      .from('profiles')
-      .select('id, email, pin_lookup')
+      .select('id, email, pin_lookup, role', { count: 'exact' })
       .eq('role', 'coordinator');
 
-    if (!allCoordinators || allCoordinators.length === 0) {
-      return res.status(401).json({ error: 'No coordinators found' });
+    if (fetchError) {
+      console.error("DB Error:", fetchError);
+      return res.status(500).json({ error: `Database error: ${fetchError.message}` });
     }
 
+    // If the array is empty, return a detailed error
+    if (!allCoordinators || allCoordinators.length === 0) {
+      return res.status(401).json({ error: `No coordinators found in DB. (Found: ${count})` });
+    }
+
+    // 3. Loop through them and try to match the PIN
     for (const coord of allCoordinators) {
       if (!coord.email) continue;
       
-      // Try signing in
       const { data, error } = await admin.auth.signInWithPassword({
         email: coord.email,
         password: String(pin),
       });
 
       if (!error && data.session) {
-        // Success! This is the right coordinator.
-        // Let's silently update their pin_lookup so next time it's fast.
+        // If they don't have a pin_lookup saved, heal the database
         if (!coord.pin_lookup) {
           await admin.from('profiles').update({ pin_lookup: String(pin) }).eq('id', coord.id);
         }
@@ -60,11 +51,10 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    // 3. If we get here, the PIN truly doesn't exist
-    return res.status(401).json({ error: 'PIN not found. Check with admin.' });
+    return res.status(401).json({ error: 'Invalid PIN' });
 
   } catch (err: any) {
-    console.error("Login error:", err.message);
-    res.status(500).json({ error: 'Server error during login' });
+    console.error("Server Error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 }
