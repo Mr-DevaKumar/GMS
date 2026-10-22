@@ -19,16 +19,18 @@ export default async function handler(req: any, res: any) {
 
   const { name, pin } = req.body || {};
   
-  if (!name || !pin) {
-    return res.status(400).json({ error: 'Name and PIN required' });
-  }
-  
-  if (String(pin).length > 10) {
-    return res.status(400).json({ error: 'PIN cannot exceed 10 digits' });
+  // Enforce 6-10 digits
+  if (!name || !pin || String(pin).length < 6 || String(pin).length > 10) {
+    return res.status(400).json({ error: 'Name and PIN (6-10 digits) required' });
   }
 
-  // Check if PIN is already in use
-  const { data: existing } = await admin.from('profiles').select('id').eq('pin_lookup', String(pin)).single();
+  // Check if PIN is already in use (using maybeSingle to prevent errors)
+  const { data: existing } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('pin_lookup', String(pin))
+    .maybeSingle();
+    
   if (existing) {
     return res.status(400).json({ error: 'PIN already in use. Please choose another.' });
   }
