@@ -12,15 +12,20 @@ export default async function handler(req: any, res: any) {
   if (!pin) return res.status(400).json({ error: 'PIN required' });
 
   try {
-    // 1. Look up the coordinator by their unique PIN
-    const { data: profile } = await admin
+    // 1. Look up the coordinator by their unique PIN using maybeSingle
+    const { data: profile, error: fetchErr } = await admin
       .from('profiles')
       .select('email')
       .eq('pin_lookup', String(pin))
-      .single();
+      .maybeSingle();
+
+    if (fetchErr) {
+      console.error("Fetch error:", fetchErr);
+      return res.status(500).json({ error: 'Database connection error' });
+    }
 
     if (!profile || !profile.email) {
-      return res.status(401).json({ error: 'Invalid PIN' });
+      return res.status(401).json({ error: 'PIN not found. Check with admin.' });
     }
 
     // 2. Sign in with the found email and the PIN
@@ -29,8 +34,13 @@ export default async function handler(req: any, res: any) {
       password: String(pin),
     });
 
-    if (error || !data.session) {
-      return res.status(401).json({ error: 'Invalid PIN' });
+    if (error) {
+      console.error("Auth error:", error.message);
+      return res.status(401).json({ error: `Auth failed: ${error.message}` });
+    }
+
+    if (!data.session) {
+      return res.status(401).json({ error: 'Failed to create session' });
     }
 
     return res.json({ session: data.session });
