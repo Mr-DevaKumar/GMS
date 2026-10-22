@@ -12,40 +12,59 @@ export default async function handler(req: any, res: any) {
   if (!pin) return res.status(400).json({ error: 'PIN required' });
 
   try {
-    // 1. Look up the coordinator by their unique PIN using maybeSingle
-    const { data: profile, error: fetchErr } = await admin
+    // --- FAST PATH ---
+    // 1. Try to find the coordinator using the pin_lookup column
+    const { data: profile } = await admin
       .from('profiles')
-      .select('email')
+      .select('id, email')
       .eq('pin_lookup', String(pin))
       .maybeSingle();
 
-    if (fetchErr) {
-      console.error("Fetch error:", fetchErr);
-      return res.status(500).json({ error: 'Database connection error' });
+    if (profile && profile.email) {
+      const { data, error } = await admin.auth.signInWithPassword({
+        email: profile.email,
+        password: String(pin),
+      });
+      if (!error && data.session) {
+        return res.json({ session: data.session });
+      }
     }
 
-    if (!profile || !profile.email) {
-      return res.status(401).json({ error: 'PIN not found. Check with admin.' });
+    // --- FALLBACK PATH (For old coordinators) ---
+    // 2. If not found, fetch all coordinators and try to match the PIN
+    const { data: allCoordinators } = await admin
+      .from('profiles')
+      .select('id, email, pin_lookup')
+      .eq('role', 'coordinator');
+
+    if (!allCoordinators || allCoordinators.length === 0) {
+      return res.status(401).json({ error: 'No coordinators found' });
     }
 
-    // 2. Sign in with the found email and the PIN
-    const { data, error } = await admin.auth.signInWithPassword({
-      email: profile.email,
-      password: String(pin),
-    });
+    for (const coord of allCoordinators) {
+      if (!coord.email) continue;
+      
+      // Try signing in
+      const { data, error } = await admin.auth.signInWithPassword({
+        email: coord.email,
+        password: String(pin),
+      });
 
-    if (error) {
-      console.error("Auth error:", error.message);
-      return res.status(401).json({ error: `Auth failed: ${error.message}` });
+      if (!error && data.session) {
+        // Success! This is the right coordinator.
+        // Let's silently update their pin_lookup so next time it's fast.
+        if (!coord.pin_lookup) {
+          await admin.from('profiles').update({ pin_lookup: String(pin) }).eq('id', coord.id);
+        }
+        return res.json({ session: data.session });
+      }
     }
 
-    if (!data.session) {
-      return res.status(401).json({ error: 'Failed to create session' });
-    }
+    // 3. If we get here, the PIN truly doesn't exist
+    return res.status(401).json({ error: 'PIN not found. Check with admin.' });
 
-    return res.json({ session: data.session });
-    
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error("Login error:", err.message);
+    res.status(500).json({ error: 'Server error during login' });
   }
 }
