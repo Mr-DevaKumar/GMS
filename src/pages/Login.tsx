@@ -161,7 +161,7 @@ export default function Login() {
     if (profile) nav(profile.role === 'admin' ? '/admin' : '/c');
   }, [profile, nav]);
 
-  const submitPin = useCallback(async () => {
+    const submitPin = useCallback(async () => {
     if (!pin || loading) return;
     setLoading(true);
     setError('');
@@ -178,8 +178,9 @@ export default function Login() {
         refresh_token: data.session.refresh_token,
       });
       nav('/c');
-    } catch (e) {
-      setError('Invalid PIN. Please try again.');
+    } catch (e: any) {
+      // Show the actual error from the backend
+      setError(e.message || 'Invalid PIN. Please try again.');
       setPin('');
       setShake(true);
       setTimeout(() => setShake(false), 400);
