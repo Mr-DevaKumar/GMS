@@ -5,7 +5,7 @@ import { useToast } from '../../components/Toast';
 import type { Game, Profile } from '../../types';
 import { 
   Plus, Gamepad2, Clock, Check, Users, Settings2, X, 
-  LayoutGrid, Pencil 
+  LayoutGrid, Pencil, Trash2, AlertTriangle
 } from 'lucide-react';
 
 const STYLES = `
@@ -56,6 +56,10 @@ export default function Games() {
   // Manage Coordinators State
   const [managingGame, setManagingGame] = useState<Game | null>(null);
 
+  // Delete Game State
+  const [deletingGame, setDeletingGame] = useState<Game | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const { show } = useToast();
 
   async function load() {
@@ -96,23 +100,16 @@ export default function Games() {
     };
 
     if (editId) {
-      // Update existing game
       const { error } = await supabase.from('games').update(payload).eq('id', editId);
       if (error) return show(error.message, true);
 
-      // If timer exists, sync it to the timer_state so coordinators see the update instantly
       if (payload.timer_seconds) {
-        await supabase.rpc('update_timer_duration', { 
-          p_game_id: editId, 
-          p_seconds: payload.timer_seconds 
-        });
+        await supabase.rpc('update_timer_duration', { p_game_id: editId, p_seconds: payload.timer_seconds });
       } else {
-        // If timer was removed, clean up the timer state
         await supabase.from('timer_state').delete().eq('game_id', editId);
       }
       show('Game updated');
     } else {
-      // Insert new game
       const { error } = await supabase.from('games').insert(payload);
       if (error) return show(error.message, true);
       show('Game added');
@@ -120,6 +117,21 @@ export default function Games() {
     
     setIsOpen(false);
     load();
+  }
+
+  async function confirmDelete() {
+    if (!deletingGame) return;
+    setIsDeleting(true);
+    const { error } = await supabase.from('games').delete().eq('id', deletingGame.id);
+    
+    if (error) {
+      show(error.message, true);
+    } else {
+      show('Game deleted successfully');
+      setDeletingGame(null);
+      load();
+    }
+    setIsDeleting(false);
   }
 
   async function toggleActive(g: Game) {
@@ -147,7 +159,6 @@ export default function Games() {
       <style>{STYLES}</style>
       
       <div className="relative min-h-[100dvh] bg-[var(--bg)] text-[var(--ink)]">
-        {/* Fixed dot-grid canvas */}
         <div
           className="fixed inset-0 pointer-events-none opacity-50"
           style={{
@@ -159,7 +170,6 @@ export default function Games() {
 
         <div className="relative p-4 md:p-8 max-w-6xl mx-auto pb-20">
           
-          {/* Header */}
           <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 animate-rise">
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -188,7 +198,6 @@ export default function Games() {
             </button>
           </header>
 
-          {/* Games Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
             {games.map((g, i) => {
               const isActive = g.is_active;
@@ -207,13 +216,22 @@ export default function Games() {
                   "
                   style={{ animationDelay: `${Math.min(i * 50, 300)}ms` }}
                 >
-                  {/* Top Row: Icon, Title & Status */}
                   <div className="flex items-start justify-between mb-4">
                     <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--surface-2)] to-[var(--line)] border border-[var(--line)] flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform duration-300">
                       <Gamepad2 size={24} className="text-[var(--ink)]" />
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {/* Delete Button */}
+                      <button 
+                        onClick={() => setDeletingGame(g)}
+                        className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--surface-2)] text-[var(--ink-2)] hover:text-[var(--accent)] hover:bg-[var(--accent-soft)] transition-colors"
+                        title="Delete Game"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+
+                      {/* Edit Button */}
                       <button 
                         onClick={() => openEdit(g)}
                         className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--surface-2)] text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--line)] transition-colors"
@@ -237,7 +255,6 @@ export default function Games() {
                     </div>
                   </div>
 
-                  {/* Middle Row: Title & Meta */}
                   <div className="min-w-0 mb-4">
                     <h3 className="font-bold text-xl truncate leading-tight group-hover:text-[var(--accent)] transition-colors">
                       {g.name}
@@ -248,7 +265,6 @@ export default function Games() {
                     </div>
                   </div>
 
-                  {/* Bottom Row: Coordinator Summary & Manage */}
                   <div className="mt-auto pt-4 border-t border-[var(--line)]">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-1.5 text-[var(--ink-3)]">
@@ -307,15 +323,11 @@ export default function Games() {
 
         </div>
 
-        {/* ================= CENTERED ADD / EDIT GAME MODAL ================= */}
+        {/* ================= ADD / EDIT GAME MODAL ================= */}
         {isOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md animate-fade-in">
             <div className="bg-[var(--surface)] w-full max-w-md rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-scale-in border border-[var(--line)] relative">
-              
-              {/* Decorative Mesh Background in Header */}
               <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-br from-[var(--accent-soft)] to-transparent opacity-50 pointer-events-none" />
-
-              {/* Modal Header */}
               <div className="relative p-6 border-b border-[var(--line)] flex-shrink-0 flex items-center justify-between">
                 <div>
                   <h3 className="text-xl font-bold flex items-center gap-2">
@@ -326,30 +338,18 @@ export default function Games() {
                     {editId ? 'Update details or timer' : 'Create a new event game'}
                   </p>
                 </div>
-                <button 
-                  onClick={() => setIsOpen(false)} 
-                  className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--surface-2)] text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--line)] active:scale-90 transition-all flex-shrink-0 z-10"
-                >
+                <button onClick={() => setIsOpen(false)} className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--surface-2)] text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--line)] active:scale-90 transition-all flex-shrink-0 z-10">
                   <X size={18} />
                 </button>
               </div>
-
-              {/* Modal Body */}
               <div className="p-6 flex flex-col gap-5 relative">
                 <div>
                   <label className="label block mb-2 text-[var(--ink-2)]">Game Name</label>
                   <div className="relative">
                     <Gamepad2 className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--ink-3)] pointer-events-none" size={18} />
-                    <input 
-                      autoFocus 
-                      className="input !pl-12" 
-                      placeholder="e.g. Ring Toss" 
-                      value={name} 
-                      onChange={e => setName(e.target.value)} 
-                    />
+                    <input autoFocus className="input !pl-12" placeholder="e.g. Ring Toss" value={name} onChange={e => setName(e.target.value)} />
                   </div>
                 </div>
-                
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="label text-[var(--ink-2)]">Timer Duration</label>
@@ -357,109 +357,97 @@ export default function Games() {
                   </div>
                   <div className="relative">
                     <Clock className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--ink-3)] pointer-events-none" size={18} />
-                    <input 
-                      className="input !pl-12" 
-                      type="number" 
-                      placeholder="Seconds (leave empty for no timer)" 
-                      value={timer} 
-                      onChange={e => setTimer(e.target.value)} 
-                    />
+                    <input className="input !pl-12" type="number" placeholder="Seconds (leave empty for no timer)" value={timer} onChange={e => setTimer(e.target.value)} />
                   </div>
                 </div>
-
-                <button 
-                  className="
-                    w-full h-14 rounded-2xl mt-4
-                    inline-flex items-center justify-center gap-2
-                    bg-[var(--ink)] text-[var(--bg)]
-                    text-sm font-bold uppercase tracking-[0.08em]
-                    active:scale-[0.98] transition-transform
-                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]
-                    disabled:opacity-40 disabled:cursor-not-allowed shadow-lg
-                  " 
-                  style={{ fontFamily: 'var(--font-mono)' }}
-                  onClick={saveGame}
-                  disabled={!name.trim()}
-                >
-                  <Check size={18} /> 
-                  {editId ? 'Save Changes' : 'Save Game'}
+                <button className="w-full h-14 rounded-2xl mt-4 inline-flex items-center justify-center gap-2 bg-[var(--ink)] text-[var(--bg)] text-sm font-bold uppercase tracking-[0.08em] active:scale-[0.98] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-40 disabled:cursor-not-allowed shadow-lg" style={{ fontFamily: 'var(--font-mono)' }} onClick={saveGame} disabled={!name.trim()}>
+                  <Check size={18} /> {editId ? 'Save Changes' : 'Save Game'}
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* ================= CENTERED MANAGE COORDINATORS MODAL ================= */}
+        {/* ================= MANAGE COORDINATORS MODAL ================= */}
         {managingGame && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md animate-fade-in">
             <div className="bg-[var(--surface)] w-full max-w-md rounded-[2rem] shadow-2xl flex flex-col max-h-[85dvh] overflow-hidden animate-scale-in border border-[var(--line)] relative">
-              
-              {/* Decorative Mesh Background in Header */}
               <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-br from-[var(--accent-soft)] to-transparent opacity-50 pointer-events-none" />
-
-              {/* Modal Header */}
               <div className="relative p-6 border-b border-[var(--line)] flex-shrink-0 flex items-center justify-between">
                 <div>
-                  <h3 className="text-xl font-bold flex items-center gap-2">
-                    <Users size={20} className="text-[var(--accent)]" /> Assign Staff
-                  </h3>
+                  <h3 className="text-xl font-bold flex items-center gap-2"><Users size={20} className="text-[var(--accent)]" /> Assign Staff</h3>
                   <p className="text-[11px] text-[var(--ink-3)] mt-1 font-mono uppercase tracking-wider truncate max-w-[200px]">{managingGame.name}</p>
                 </div>
-                <button 
-                  onClick={() => setManagingGame(null)} 
-                  className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--surface-2)] text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--line)] active:scale-90 transition-all flex-shrink-0 z-10"
-                >
+                <button onClick={() => setManagingGame(null)} className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--surface-2)] text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--line)] active:scale-90 transition-all flex-shrink-0 z-10">
                   <X size={18} />
                 </button>
               </div>
-
-              {/* Modal Scrollable Body */}
               <div className="p-4 sm:p-5 overflow-y-auto no-scrollbar flex-1 relative">
                 <div className="flex items-center justify-between mb-4 px-1">
                   <span className="label text-[var(--ink-2)]">Available Staff</span>
                   <span className="label text-[var(--accent)] bg-[var(--accent-soft)] px-2 py-0.5 rounded-sm">{getAssignedCount(managingGame.id)} Assigned</span>
                 </div>
-
                 <div className="flex flex-col gap-2">
                   {coordinators.map(c => {
                     const assigned = assignments.some(a => a.game_id === managingGame.id && a.user_id === c.id);
-                    
                     return (
-                      <button
-                        key={c.id}
-                        onClick={() => toggleAssign(managingGame.id, c.id)}
-                        className={`
-                          w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all active:scale-[0.99]
-                          ${assigned 
-                            ? 'border-[var(--ink)] bg-[var(--surface)] shadow-sm' 
-                            : 'border-[var(--line)] bg-transparent hover:bg-[var(--surface-2)]'}
-                        `}
-                      >
+                      <button key={c.id} onClick={() => toggleAssign(managingGame.id, c.id)} className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all active:scale-[0.99] ${assigned ? 'border-[var(--ink)] bg-[var(--surface)] shadow-sm' : 'border-[var(--line)] bg-transparent hover:bg-[var(--surface-2)]'}`}>
                         <div className="flex items-center gap-3">
                           <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${assigned ? 'bg-[var(--ink)] text-[var(--bg)]' : 'bg-[var(--surface-2)] text-[var(--ink-2)]'}`}>
                             {initialOf(c.display_name)}
                           </div>
                           <span className={`font-semibold text-[15px] transition-colors ${assigned ? 'text-[var(--ink)]' : 'text-[var(--ink-2)]'}`}>{c.display_name}</span>
                         </div>
-                        
-                        <div className={`
-                          w-6 h-6 rounded-full flex items-center justify-center transition-colors flex-shrink-0
-                          ${assigned ? 'bg-[var(--ink)] text-[var(--bg)]' : 'border-2 border-[var(--line)]'}
-                        `}>
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors flex-shrink-0 ${assigned ? 'bg-[var(--ink)] text-[var(--bg)]' : 'border-2 border-[var(--line)]'}`}>
                           {assigned && <Check size={14} strokeWidth={3} />}
                         </div>
                       </button>
                     );
                   })}
-                  
-                  {coordinators.length === 0 && (
-                    <div className="text-center py-10 text-[var(--ink-3)] text-sm">
-                      No coordinators exist yet. Add them in the Coordinators tab.
-                    </div>
-                  )}
+                  {coordinators.length === 0 && <div className="text-center py-10 text-[var(--ink-3)] text-sm">No coordinators exist yet. Add them in the Coordinators tab.</div>}
                 </div>
               </div>
+            </div>
+          </div>
+        )}
 
+        {/* ================= DELETE CONFIRMATION MODAL ================= */}
+        {deletingGame && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md animate-fade-in">
+            <div className="bg-[var(--surface)] w-full max-w-md rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-scale-in border border-[var(--line)] relative">
+              <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-br from-[var(--accent-soft)] to-transparent opacity-50 pointer-events-none" />
+
+              <div className="relative p-6 border-b border-[var(--line)] flex-shrink-0 flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold flex items-center gap-2 text-[var(--accent)]">
+                    <AlertTriangle size={20} /> Delete Game
+                  </h3>
+                  <p className="text-[11px] text-[var(--ink-3)] mt-1 font-mono uppercase tracking-wider">This cannot be undone</p>
+                </div>
+                <button 
+                  onClick={() => setDeletingGame(null)} 
+                  className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--surface-2)] text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--line)] active:scale-90 transition-all flex-shrink-0 z-10"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="p-6 flex flex-col gap-5 relative">
+                <p className="text-sm text-[var(--ink-2)] leading-relaxed">
+                  Are you sure you want to delete <strong className="text-[var(--ink)]">{deletingGame.name}</strong>?
+                  <br/><br/>
+                  <span className="text-[var(--accent)] font-bold">Warning:</span> All recorded wins for this game will also be permanently deleted, and it will be removed from all coordinators.
+                </p>
+                
+                <button 
+                  className="w-full h-14 rounded-2xl mt-2 inline-flex items-center justify-center gap-2 bg-[var(--accent)] text-white text-sm font-bold uppercase tracking-[0.08em] active:scale-[0.98] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-[var(--accent)]/20" 
+                  style={{ fontFamily: 'var(--font-mono)' }}
+                  onClick={confirmDelete}
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? 'Deleting…' : <><Trash2 size={18} /> Confirm Delete</>}
+                </button>
+              </div>
             </div>
           </div>
         )}
