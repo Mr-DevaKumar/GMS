@@ -5,7 +5,7 @@ import { useToast } from '../../components/Toast';
 import type { EventSettings, PlayerStat } from '../../types';
 import { 
   Search, Trophy, CheckCircle2, Clock, X, Award, 
-  Sparkles, ArrowRight 
+  Sparkles, ArrowRight, Trash2, AlertTriangle 
 } from 'lucide-react';
 
 const STYLES = `
@@ -50,6 +50,11 @@ export default function Prizes() {
   const [claimingType, setClaimingType] = useState<'general' | 'grand' | null>(null);
   const [recentClaims, setRecentClaims] = useState<any[]>([]);
   const [isClaiming, setIsClaiming] = useState(false);
+  
+  // Revoke State
+  const [revokingClaim, setRevokingClaim] = useState<any | null>(null);
+  const [isRevoking, setIsRevoking] = useState(false);
+
   const { show } = useToast();
 
   useEffect(() => {
@@ -73,7 +78,6 @@ export default function Prizes() {
 
   async function search() {
     if (!query.trim()) return;
-    // ⚠️ CHANGED: Use v_player_prize_stats to show available balance
     const { data } = await supabase.from('v_player_prize_stats').select('*').ilike('name', `%${query.trim()}%`).limit(10);
     setResults((data || []) as PlayerStat[]);
   }
@@ -95,13 +99,33 @@ export default function Prizes() {
       setIsClaiming(false);
     } else {
       show('Prize claimed successfully');
-      // ⚠️ CHANGED: Re-fetch from v_player_prize_stats to update the UI balance
       const { data } = await supabase.from('v_player_prize_stats').select('*').eq('id', selected.id).single();
       if (data) setSelected(data as PlayerStat);
       loadRecentClaims();
       setClaimingType(null);
       setIsClaiming(false);
     }
+  }
+
+  async function confirmRevoke() {
+    if (!revokingClaim) return;
+    setIsRevoking(true);
+    
+    const { error } = await supabase.rpc('revoke_prize_claim', { p_claim_id: revokingClaim.id });
+    
+    if (error) {
+      show(error.message, true);
+    } else {
+      show('Claim revoked successfully');
+      // If the revoked claim belongs to the currently selected player, refresh their stats
+      if (selected) {
+        const { data } = await supabase.from('v_player_prize_stats').select('*').eq('id', selected.id).single();
+        if (data) setSelected(data as PlayerStat);
+      }
+      loadRecentClaims();
+      setRevokingClaim(null);
+    }
+    setIsRevoking(false);
   }
 
   const genEligible = selected && settings && selected.total_wins >= settings.general_threshold;
@@ -113,7 +137,6 @@ export default function Prizes() {
       
       <div className="relative h-[100dvh] bg-[var(--bg)] text-[var(--ink)] flex flex-col overflow-hidden">
         
-        {/* Fixed dot-grid canvas */}
         <div
           className="absolute inset-0 pointer-events-none opacity-50"
           style={{
@@ -125,7 +148,6 @@ export default function Prizes() {
 
         <div className="relative flex flex-col flex-1 min-h-0 w-full max-w-6xl mx-auto px-4 md:px-8">
           
-          {/* Header (Pinned) */}
           <header className="flex-shrink-0 pt-6 md:pt-8 pb-6 animate-rise">
             <div className="flex items-center gap-2 mb-1">
               <Trophy size={18} className="text-[var(--amber)]" />
@@ -137,14 +159,12 @@ export default function Prizes() {
             </p>
           </header>
 
-          {/* ================= SCROLLABLE SPLIT LAYOUT ================= */}
           <div className="flex-1 overflow-y-auto no-scrollbar min-h-0 pb-10">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start">
               
               {/* LEFT COLUMN: Search & Action */}
               <div className="lg:col-span-7 space-y-6">
                 
-                {/* Search Bar */}
                 <div className="relative z-20 animate-rise" style={{ animationDelay: '60ms' }}>
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--ink-3)] pointer-events-none" size={20} />
                   <input
@@ -163,7 +183,6 @@ export default function Prizes() {
                     </button>
                   )}
 
-                  {/* Search Results Dropdown */}
                   {results.length > 0 && (
                     <div className="absolute top-full left-0 right-0 mt-2 bg-[var(--surface)] border border-[var(--line)] rounded-2xl shadow-xl overflow-hidden animate-scale-in z-30 max-h-[50vh] overflow-y-auto no-scrollbar">
                       {results.map(r => (
@@ -188,7 +207,6 @@ export default function Prizes() {
                   )}
                 </div>
 
-                {/* Selected Player ID Pass */}
                 {selected && settings ? (
                   <div className="animate-rise">
                     <div className="bg-[var(--surface)] border border-[var(--line)] rounded-3xl p-6 shadow-sm relative overflow-hidden mb-4">
@@ -214,10 +232,7 @@ export default function Prizes() {
                         </button>
                       </div>
 
-                      {/* Prize Eligibility Cards */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 relative">
-                        
-                        {/* General Prize */}
                         <div className={`relative overflow-hidden p-5 rounded-2xl border transition-all ${genEligible ? 'border-[var(--amber)] bg-[var(--amber)]/5' : 'border-[var(--line)] bg-[var(--surface-2)] opacity-80'}`}>
                           <div className="flex items-center gap-2 mb-3">
                             <Award size={16} className={genEligible ? 'text-[var(--amber)]' : 'text-[var(--ink-3)]'} />
@@ -236,7 +251,6 @@ export default function Prizes() {
                           </div>
                         </div>
 
-                        {/* Grand Prize */}
                         <div className={`relative overflow-hidden p-5 rounded-2xl border transition-all ${grandEligible ? 'border-[var(--green)] bg-[var(--green)]/5' : 'border-[var(--line)] bg-[var(--surface-2)] opacity-80'}`}>
                           <div className="flex items-center gap-2 mb-3">
                             <Trophy size={16} className={grandEligible ? 'text-[var(--green)]' : 'text-[var(--ink-3)]'} />
@@ -254,22 +268,12 @@ export default function Prizes() {
                             )}
                           </div>
                         </div>
-
                       </div>
                     </div>
 
-                    {/* Action Buttons */}
                     <div className="flex flex-col gap-3">
                       <button
-                        className="
-                          w-full h-14 rounded-2xl
-                          inline-flex items-center justify-center gap-2
-                          bg-[var(--ink)] text-[var(--bg)]
-                          text-sm font-bold uppercase tracking-[0.08em]
-                          active:scale-[0.98] transition-transform
-                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]
-                          disabled:opacity-30 disabled:cursor-not-allowed shadow-lg
-                        "
+                        className="w-full h-14 rounded-2xl inline-flex items-center justify-center gap-2 bg-[var(--ink)] text-[var(--bg)] text-sm font-bold uppercase tracking-[0.08em] active:scale-[0.98] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-30 disabled:cursor-not-allowed shadow-lg"
                         style={{ fontFamily: 'var(--font-mono)' }}
                         disabled={!genEligible || settings.claims_closed}
                         onClick={() => setClaimingType('general')}
@@ -277,15 +281,7 @@ export default function Prizes() {
                         <Award size={18} /> Mark General Claimed
                       </button>
                       <button
-                        className="
-                          w-full h-14 rounded-2xl
-                          inline-flex items-center justify-center gap-2
-                          bg-[var(--accent)] text-white
-                          text-sm font-bold uppercase tracking-[0.08em]
-                          active:scale-[0.98] transition-transform
-                          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]
-                          disabled:opacity-30 disabled:cursor-not-allowed shadow-lg shadow-[var(--accent)]/20
-                        "
+                        className="w-full h-14 rounded-2xl inline-flex items-center justify-center gap-2 bg-[var(--accent)] text-white text-sm font-bold uppercase tracking-[0.08em] active:scale-[0.98] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-30 disabled:cursor-not-allowed shadow-lg shadow-[var(--accent)]/20"
                         style={{ fontFamily: 'var(--font-mono)' }}
                         disabled={!grandEligible || settings.claims_closed}
                         onClick={() => setClaimingType('grand')}
@@ -295,7 +291,6 @@ export default function Prizes() {
                     </div>
                   </div>
                 ) : (
-                  /* Empty state for the left column */
                   <div className="hidden lg:flex flex-col items-center justify-center py-20 text-center bg-[var(--surface)] border border-dashed border-[var(--line)] rounded-3xl animate-rise">
                     <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-[var(--surface-2)] mb-4 text-[var(--ink-3)]">
                       <Search size={28} />
@@ -330,7 +325,7 @@ export default function Prizes() {
                     {recentClaims.map((c) => (
                       <div 
                         key={c.id} 
-                        className="bg-[var(--surface)] border border-[var(--line)] rounded-2xl p-4 flex justify-between items-center shadow-sm hover:border-[var(--ink-3)] transition-colors"
+                        className="group bg-[var(--surface)] border border-[var(--line)] rounded-2xl p-4 flex justify-between items-center shadow-sm hover:border-[var(--ink-3)] transition-colors"
                       >
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 rounded-full bg-[var(--surface-2)] border border-[var(--line)] flex items-center justify-center flex-shrink-0 text-xs font-bold text-[var(--ink-2)]">
@@ -347,9 +342,19 @@ export default function Prizes() {
                             </div>
                           </div>
                         </div>
-                        <div className="text-[10px] text-[var(--ink-3)] font-mono text-right tabular-nums">
-                          {new Date(c.claimed_at).toLocaleDateString()}<br/>
-                          {new Date(c.claimed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        
+                        <div className="flex items-center gap-3">
+                          <div className="text-[10px] text-[var(--ink-3)] font-mono text-right tabular-nums">
+                            {new Date(c.claimed_at).toLocaleDateString()}<br/>
+                            {new Date(c.claimed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                          <button 
+                            onClick={() => setRevokingClaim(c)}
+                            className="p-2 text-[var(--ink-3)] hover:text-[var(--accent)] hover:bg-[var(--accent-soft)] rounded-full transition-colors opacity-50 group-hover:opacity-100"
+                            title="Revoke Claim"
+                          >
+                            <Trash2 size={16} />
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -361,15 +366,11 @@ export default function Prizes() {
           </div>
         </div>
 
-        {/* ================= CENTERED CLAIM MODAL ================= */}
+        {/* ================= CLAIM MODAL ================= */}
         {claimingType && selected && settings && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md animate-fade-in">
             <div className="bg-[var(--surface)] w-full max-w-md rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-scale-in border border-[var(--line)] relative">
-              
-              {/* Decorative Mesh Background */}
               <div className={`absolute top-0 left-0 right-0 h-32 opacity-20 pointer-events-none ${claimingType === 'grand' ? 'bg-gradient-to-br from-[var(--green)] to-transparent' : 'bg-gradient-to-br from-[var(--amber)] to-transparent'}`} />
-
-              {/* Modal Header */}
               <div className="relative p-6 border-b border-[var(--line)] flex-shrink-0 flex items-center justify-between">
                 <div>
                   <h3 className={`text-xl font-bold flex items-center gap-2 ${claimingType === 'grand' ? 'text-[var(--green)]' : 'text-[var(--amber)]'}`}>
@@ -378,17 +379,11 @@ export default function Prizes() {
                   </h3>
                   <p className="text-[11px] text-[var(--ink-3)] mt-1 font-mono uppercase tracking-wider">Verify deduction</p>
                 </div>
-                <button 
-                  onClick={() => setClaimingType(null)} 
-                  className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--surface-2)] text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--line)] active:scale-90 transition-all flex-shrink-0 z-10"
-                >
+                <button onClick={() => setClaimingType(null)} className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--surface-2)] text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--line)] active:scale-90 transition-all flex-shrink-0 z-10">
                   <X size={18} />
                 </button>
               </div>
-
-              {/* Modal Body */}
               <div className="p-6 flex flex-col gap-5 relative">
-                
                 <div className="flex items-center gap-4 bg-[var(--surface-2)] p-4 rounded-2xl border border-[var(--line)]">
                   <div className="w-12 h-12 rounded-full bg-[var(--ink)] flex items-center justify-center flex-shrink-0">
                     <span className="dot-num text-lg text-[var(--bg)]">{initialOf(selected.name)}</span>
@@ -398,32 +393,65 @@ export default function Prizes() {
                     <div className="text-[11px] text-[var(--ink-3)] font-mono mt-0.5">{selected.age} yrs · {selected.anbiyam || '—'}</div>
                   </div>
                 </div>
-
                 <p className="text-sm text-[var(--ink-2)] leading-relaxed">
                   Are you sure you want to mark this prize as claimed? This will deduct <strong className="text-[var(--ink)]">{claimingType === 'grand' ? settings.grand_threshold : settings.general_threshold}</strong> from their available {claimingType === 'grand' ? 'games' : 'wins'}.
                 </p>
-                
-                <button 
-                  className="
-                    w-full h-14 rounded-2xl mt-2
-                    inline-flex items-center justify-center gap-2
-                    bg-[var(--ink)] text-[var(--bg)]
-                    text-sm font-bold uppercase tracking-[0.08em]
-                    active:scale-[0.98] transition-transform
-                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]
-                    disabled:opacity-40 disabled:cursor-not-allowed shadow-lg
-                  " 
-                  style={{ fontFamily: 'var(--font-mono)' }}
-                  onClick={confirmClaim}
-                  disabled={isClaiming}
-                >
+                <button className="w-full h-14 rounded-2xl mt-2 inline-flex items-center justify-center gap-2 bg-[var(--ink)] text-[var(--bg)] text-sm font-bold uppercase tracking-[0.08em] active:scale-[0.98] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-40 disabled:cursor-not-allowed shadow-lg" style={{ fontFamily: 'var(--font-mono)' }} onClick={confirmClaim} disabled={isClaiming}>
                   {isClaiming ? 'Processing…' : <><CheckCircle2 size={18} /> Confirm Claim</>}
                 </button>
               </div>
             </div>
           </div>
         )}
-        
+
+        {/* ================= REVOKE MODAL ================= */}
+        {revokingClaim && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md animate-fade-in">
+            <div className="bg-[var(--surface)] w-full max-w-md rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-scale-in border border-[var(--line)] relative">
+              <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-br from-[var(--accent-soft)] to-transparent opacity-50 pointer-events-none" />
+              
+              <div className="relative p-6 border-b border-[var(--line)] flex-shrink-0 flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold flex items-center gap-2 text-[var(--accent)]">
+                    <AlertTriangle size={20} /> Revoke Claim
+                  </h3>
+                  <p className="text-[11px] text-[var(--ink-3)] mt-1 font-mono uppercase tracking-wider">Restore player's balance</p>
+                </div>
+                <button onClick={() => setRevokingClaim(null)} className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--surface-2)] text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--line)] active:scale-90 transition-all flex-shrink-0 z-10">
+                  <X size={18} />
+                </button>
+              </div>
+              
+              <div className="p-6 flex flex-col gap-5 relative">
+                <div className="flex items-center gap-4 bg-[var(--surface-2)] p-4 rounded-2xl border border-[var(--line)]">
+                  <div className="w-12 h-12 rounded-full bg-[var(--ink)] flex items-center justify-center flex-shrink-0">
+                    <span className="dot-num text-lg text-[var(--bg)]">{initialOf(revokingClaim.players?.name)}</span>
+                  </div>
+                  <div>
+                    <div className="font-bold text-lg leading-tight">{revokingClaim.players?.name || 'Unknown'}</div>
+                    <div className="text-[11px] text-[var(--ink-3)] font-mono mt-0.5 uppercase tracking-wider">
+                      {revokingClaim.prize_type === 'grand' ? 'Grand Prize Claim' : 'General Prize Claim'}
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-sm text-[var(--ink-2)] leading-relaxed">
+                  Are you sure you want to revoke this claim? The player's spent wins will be refunded to their available balance immediately, and this action will be logged in the audit trail.
+                </p>
+                
+                <button 
+                  className="w-full h-14 rounded-2xl mt-2 inline-flex items-center justify-center gap-2 bg-[var(--accent)] text-white text-sm font-bold uppercase tracking-[0.08em] active:scale-[0.98] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-[var(--accent)]/20" 
+                  style={{ fontFamily: 'var(--font-mono)' }}
+                  onClick={confirmRevoke}
+                  disabled={isRevoking}
+                >
+                  {isRevoking ? 'Revoking…' : <><Trash2 size={18} /> Confirm Revoke</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </AdminLayout>
   );
