@@ -3,7 +3,10 @@ import { supabase } from '../../lib/supabase';
 import AdminLayout from '../../components/AdminLayout';
 import { useToast } from '../../components/Toast';
 import type { Game, Profile } from '../../types';
-import { Plus, Gamepad2, Clock, Check, Users, Settings2, X, ShieldCheck, LayoutGrid, Fingerprint } from 'lucide-react';
+import { 
+  Plus, Gamepad2, Clock, Check, Users, Settings2, X, 
+  LayoutGrid, Pencil 
+} from 'lucide-react';
 
 const STYLES = `
   @keyframes rise {
@@ -44,8 +47,9 @@ export default function Games() {
   const [coordinators, setCoordinators] = useState<Profile[]>([]);
   const [assignments, setAssignments] = useState<{ game_id: string; user_id: string }[]>([]);
   
-  // Add Game State
+  // Add/Edit Game State
   const [isOpen, setIsOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [timer, setTimer] = useState('');
   
@@ -69,17 +73,52 @@ export default function Games() {
     load();
   }, []);
 
-  async function addGame() {
-    if (!name.trim()) return;
-    const { error } = await supabase.from('games').insert({
-      name: name.trim(),
-      timer_seconds: timer ? parseInt(timer) : null,
-    });
-    if (error) return show(error.message, true);
+  function openAdd() {
+    setEditId(null);
     setName('');
     setTimer('');
+    setIsOpen(true);
+  }
+
+  function openEdit(g: Game) {
+    setEditId(g.id);
+    setName(g.name);
+    setTimer(g.timer_seconds ? String(g.timer_seconds) : '');
+    setIsOpen(true);
+  }
+
+  async function saveGame() {
+    if (!name.trim()) return;
+    
+    const payload = {
+      name: name.trim(),
+      timer_seconds: timer ? parseInt(timer) : null,
+    };
+
+    if (editId) {
+      // Update existing game
+      const { error } = await supabase.from('games').update(payload).eq('id', editId);
+      if (error) return show(error.message, true);
+
+      // If timer exists, sync it to the timer_state so coordinators see the update instantly
+      if (payload.timer_seconds) {
+        await supabase.rpc('update_timer_duration', { 
+          p_game_id: editId, 
+          p_seconds: payload.timer_seconds 
+        });
+      } else {
+        // If timer was removed, clean up the timer state
+        await supabase.from('timer_state').delete().eq('game_id', editId);
+      }
+      show('Game updated');
+    } else {
+      // Insert new game
+      const { error } = await supabase.from('games').insert(payload);
+      if (error) return show(error.message, true);
+      show('Game added');
+    }
+    
     setIsOpen(false);
-    show('Game added');
     load();
   }
 
@@ -134,7 +173,7 @@ export default function Games() {
             </div>
             
             <button 
-              onClick={() => setIsOpen(true)} 
+              onClick={openAdd} 
               className="
                 inline-flex items-center justify-center gap-2 
                 bg-[var(--ink)] text-[var(--bg)] 
@@ -174,18 +213,28 @@ export default function Games() {
                       <Gamepad2 size={24} className="text-[var(--ink)]" />
                     </div>
 
-                    <button 
-                      onClick={() => toggleActive(g)}
-                      className={`
-                        px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-colors
-                        ${isActive 
-                          ? 'bg-[var(--green)]/10 text-[var(--green)] border-[var(--green)]/20 hover:bg-[var(--green)]/20' 
-                          : 'bg-[var(--surface-2)] text-[var(--ink-3)] border-[var(--line)] hover:text-[var(--ink)]'}
-                      `}
-                      style={{ fontFamily: 'var(--font-mono)' }}
-                    >
-                      {isActive ? 'Active' : 'Inactive'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => openEdit(g)}
+                        className="w-8 h-8 rounded-full flex items-center justify-center bg-[var(--surface-2)] text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--line)] transition-colors"
+                        title="Edit Game"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      
+                      <button 
+                        onClick={() => toggleActive(g)}
+                        className={`
+                          px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-colors
+                          ${isActive 
+                            ? 'bg-[var(--green)]/10 text-[var(--green)] border-[var(--green)]/20 hover:bg-[var(--green)]/20' 
+                            : 'bg-[var(--surface-2)] text-[var(--ink-3)] border-[var(--line)] hover:text-[var(--ink)]'}
+                        `}
+                        style={{ fontFamily: 'var(--font-mono)' }}
+                      >
+                        {isActive ? 'Active' : 'Inactive'}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Middle Row: Title & Meta */}
@@ -258,7 +307,7 @@ export default function Games() {
 
         </div>
 
-        {/* ================= CENTERED ADD GAME MODAL ================= */}
+        {/* ================= CENTERED ADD / EDIT GAME MODAL ================= */}
         {isOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/60 backdrop-blur-md animate-fade-in">
             <div className="bg-[var(--surface)] w-full max-w-md rounded-[2rem] shadow-2xl flex flex-col overflow-hidden animate-scale-in border border-[var(--line)] relative">
@@ -270,9 +319,12 @@ export default function Games() {
               <div className="relative p-6 border-b border-[var(--line)] flex-shrink-0 flex items-center justify-between">
                 <div>
                   <h3 className="text-xl font-bold flex items-center gap-2">
-                    <Gamepad2 size={20} className="text-[var(--accent)]" /> Add Game
+                    <Gamepad2 size={20} className="text-[var(--accent)]" /> 
+                    {editId ? 'Edit Game' : 'Add Game'}
                   </h3>
-                  <p className="text-[11px] text-[var(--ink-3)] mt-1 font-mono uppercase tracking-wider">Create a new event game</p>
+                  <p className="text-[11px] text-[var(--ink-3)] mt-1 font-mono uppercase tracking-wider">
+                    {editId ? 'Update details or timer' : 'Create a new event game'}
+                  </p>
                 </div>
                 <button 
                   onClick={() => setIsOpen(false)} 
@@ -308,7 +360,7 @@ export default function Games() {
                     <input 
                       className="input !pl-12" 
                       type="number" 
-                      placeholder="Seconds (e.g. 60)" 
+                      placeholder="Seconds (leave empty for no timer)" 
                       value={timer} 
                       onChange={e => setTimer(e.target.value)} 
                     />
@@ -326,10 +378,11 @@ export default function Games() {
                     disabled:opacity-40 disabled:cursor-not-allowed shadow-lg
                   " 
                   style={{ fontFamily: 'var(--font-mono)' }}
-                  onClick={addGame}
+                  onClick={saveGame}
                   disabled={!name.trim()}
                 >
-                  <Check size={18} /> Save Game
+                  <Check size={18} /> 
+                  {editId ? 'Save Changes' : 'Save Game'}
                 </button>
               </div>
             </div>
