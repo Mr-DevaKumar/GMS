@@ -74,7 +74,7 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-secret-key
 Clone the repository and install the dependencies:
 
 ```bash
-git clone https://github.com/your-username/contest-hub.git
+git clone https://github.com/Mr-DevaKumar/GMS.git
 cd contest-hub
 npm install
 ```
